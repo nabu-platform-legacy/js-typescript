@@ -1,5 +1,6 @@
 package be.nabu.js.typescript;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -12,7 +13,11 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 
+import com.coveo.nashorn_modules.FilesystemFolder;
+import com.coveo.nashorn_modules.Require;
+
 import jdk.nashorn.api.scripting.JSObject;
+import jdk.nashorn.api.scripting.NashornScriptEngine;
 import be.nabu.utils.io.IOUtils;
 
 /**
@@ -45,11 +50,11 @@ public class TypeScriptCompiler {
 //		}
 //		
 		Date date = new Date();
-		report(compile(readFile("example-error.ts")));
+		report(compile(readFile("example-import.ts")));
 		System.out.println("First compile: " + (new Date().getTime() - date.getTime()) + "ms");
-		date = new Date();
-		report(compile(readFile("example-error.ts")));
-		System.out.println("Second compile: " + (new Date().getTime() - date.getTime()) + "ms");
+//		date = new Date();
+//		report(compile(readFile("example-error.ts")));
+//		System.out.println("Second compile: " + (new Date().getTime() - date.getTime()) + "ms");
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -74,14 +79,17 @@ public class TypeScriptCompiler {
 	
 	public static JSObject compile(String content) throws ScriptException, IOException {
 		ScriptEngine compiler = getCompiler();
-		Map<String, Object> addSourceFiles = addSourceFiles(compiler, Target.ES6);
+		Map<String, Object> addSourceFiles = addSourceFiles(compiler, Target.ES5);
+		Map<String, Object> moduleFiles = new HashMap<String, Object>();
+		addSourceFile(compiler, Target.ES5, moduleFiles, "@angular/core/index.d.ts");
 		JSObject transpiler = (JSObject) compiler.eval("ts.transpileModule");
 		Map<String, Object> params = new HashMap<String, Object>();
 		params.put("reportDiagnostics", true);
 		params.put("moduleName", "test");
 		params.put("fileName", "myFile.ts");
 		params.put("sourceFiles", addSourceFiles);
-		params.put("defaultLibFileName", Target.ES6.getFiles()[0]);
+		params.put("modules", moduleFiles);
+		params.put("defaultLibFileName", Target.ES5.getFiles()[0]);
 		return (JSObject) transpiler.call(transpiler, content, params);
 	}
 
@@ -96,6 +104,7 @@ public class TypeScriptCompiler {
 	
 	private static ScriptEngine getCompiler() throws ScriptException, IOException {
 		ScriptEngine engine = new ScriptEngineManager().getEngineByName("nashorn");
+		Require.enable((NashornScriptEngine) engine, FilesystemFolder.create(new File("/home/alex/tmp2/angular-core"), "UTF-8"));
 		InputStream input = TypeScriptCompiler.class.getClassLoader().getResourceAsStream("typescript.js");
 		try {
 			engine.eval(new InputStreamReader(input, "UTF-8"));
@@ -109,11 +118,15 @@ public class TypeScriptCompiler {
 	private static Map<String, Object> addSourceFiles(ScriptEngine engine, Target target) throws ScriptException {
 		Map<String, Object> files = new HashMap<String, Object>();
 		for (String file : target.getFiles()) {
-			JSObject eval = (JSObject) engine.eval("ts.createSourceFile");
-			// first param is the "this" context
-			files.put(file, eval.call(eval, file, readFile(file), target));
+			addSourceFile(engine, target, files, file);
 		}
 		return files;
+	}
+
+	private static void addSourceFile(ScriptEngine engine, Target target, Map<String, Object> files, String file) throws ScriptException {
+		JSObject eval = (JSObject) engine.eval("ts.createSourceFile");
+		// first param is the "this" context
+		files.put(file, eval.call(eval, file, readFile(file), target));
 	}
 	
 	public static String readFile(String name) {
@@ -133,7 +146,7 @@ public class TypeScriptCompiler {
 	}
 	
 	public enum Target {
-		ES5(1),
+		ES5(1, "lib.d.ts"),
 		ES6(2, "lib.es6.d.ts")
 		;
 		private int value;
